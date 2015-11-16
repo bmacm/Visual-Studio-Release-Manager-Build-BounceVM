@@ -4,14 +4,22 @@
 Function Create-BuildBounceVM{
 <#
 .SYNOPSIS
-This script Creates a classic VM, disk and cloud service into a resource group.
+This script Creates a classic VM, disk and cloud service into a resource group. 
 
 .DESCRIPTION
-This Script created a Classic VM with disks and cloud service and moves all assets to a given ARM Resource group for ease of management. 
+This Script created a Classic VM with disks and cloud service and moves all assets to a given ARM Resource group for ease of management. The script will wait on the VM booting
+before connecting to the VM and configuring a remote PowerShell interface with authentication setup for the given Azure subscription. 
 Note MAKE SURE YOU UPGRADE TO POWERSHELL 4.0 BEFORE RUNNING THIS, BUG IN v3 CAUSES AN ERROR.
+
+To get the latest image for the given product do not enter the optional OSImageName, if you want a specific image at a given date specify the image name.
 
 .EXAMPLE
 Create-BuildBounceVM -AzureSubscriptionName "Development" -VMName "bldbounce" -Location "North Europe" -StorageAccountName "buildbouncedev" -VMSize "ExtraSmall" -OSName "Windows Server 2012 R2 Datacenter" -VMUserName "Ouradmin" -VMPassword "MyPasswordIs-01" -ResourceGroupName "BuildBounce"
+always get the latest image
+
+.EXAMPLE
+Create-BuildBounceVM -AzureSubscriptionName "Development" -VMName "bldbounce" -Location "North Europe" -StorageAccountName "buildbouncedev" -VMSize "ExtraSmall" -OSName "Windows Server 2012 R2 Datacenter" -VMUserName "Ouradmin" -VMPassword "MyPasswordIs-01" -ResourceGroupName "BuildBounce"
+use the exact image defined
 
 #>
     [CmdletBinding()]
@@ -21,13 +29,16 @@ Create-BuildBounceVM -AzureSubscriptionName "Development" -VMName "bldbounce" -L
         [parameter(Mandatory=$true)] [String] $VMName,
         [parameter(Mandatory=$true)] [String] $VMUserName,
         [parameter(Mandatory=$true)] [String] $VMPassword,
-        [parameter(Mandatory=$true)] [String] $OSName, 
+        [parameter(Mandatory=$true)] [String] $OSName,
+        [parameter(Mandatory=$false)] [String] $OSImageName,
         [parameter(Mandatory=$true)] [String] $Location, 
         [parameter(Mandatory=$true)] [String] $StorageAccountName,
         [parameter(Mandatory=$true)] [String] $ResourceGroupName,
         [parameter(Mandatory=$false)] [String] $VMSize = "ExtraSmall"   
     )
         
+        
+
         Switch-AzureMode AzureResourceManager
 
          
@@ -58,8 +69,17 @@ Create-BuildBounceVM -AzureSubscriptionName "Development" -VMName "bldbounce" -L
             
             # get OS Image list for $OSName 
             # then get the latest version of that OS image available. 
-            $OSImages=Get-AzureVMImage |
+            $OSImages= $null
+            
+            if($OSImageName -eq $null){
+                $OSImages = Get-AzureVMImage |
                          Where-Object {($_.Label -ne $null) -and ($_.Label.Contains($OSName)) -and ($_.PublisherName.Contains("Microsoft Windows Server Group"))} 
+            }else{
+                $OSImages = Get-AzureVMImage |
+                         Where-Object {($_.Label -ne $null) -and ($_.Label.Contains($OSName)) -and ($_.PublisherName.Contains("Microsoft Windows Server Group")) -and ($_.ImageName.Contains($OSImageName))}
+            }
+            
+            
             if ($OSImages -eq $null)  
             { 
                 throw "'Get-AzureVMImage' activity: Could not get OS Images whose label contains OSName '{0}'" -f $OSName 
@@ -107,7 +127,7 @@ Create-BuildBounceVM -AzureSubscriptionName "Development" -VMName "bldbounce" -L
                   Write-Output ("VM '{0}' with OS '{1}' was created successfully. " -f $VMName, $OSName)
                   Write-Output ("Now moving VM to the correct location")
 
-                  MoveVMToNewResourceGroupDeleteOldResourceGroup -VMResourceName $VMName -ResourceGroupToMoveTo $ResourceGroupName
+                  MoveVMToNewResourceGroupDeleteOldResourceGroup -VMResourceName $VMName -ResourceGroupToMoveTo $ResourceGroupName  
                   
             } 
             else 
@@ -169,7 +189,6 @@ Function MoveVMToNewResourceGroupDeleteOldResourceGroup{
         [parameter(Mandatory=$true)] [String] $ResourceGroupToMoveTo 
     )
 
-    
     Switch-AzureMode AzureResourceManager
 
     #first find out what resource group the VM is in. Note VM and Cloud Service will always be in the same resource group.
